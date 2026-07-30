@@ -1,0 +1,8 @@
+{
+  "name": "Remix XAOC Esports - PUBG Tournament Service",
+  "description": "Платформа управления турнирами PUBG, лидерборды, статистика игроков, интеграция с PUBG API и Telegram.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
