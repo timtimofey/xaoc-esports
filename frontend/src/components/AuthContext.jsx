@@ -60,6 +60,7 @@ export function AuthProvider({ children }) {
         logout,
         setRegistrationTempToken,
         isAdmin: user?.role === "admin",
+        needsSetup: !!user?.needsSetup,
       }}
     >
       {children}

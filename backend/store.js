@@ -345,6 +345,8 @@ export function updateUser(id, fields) {
   if (fields.pubg_nickname !== undefined) user.pubgNickname = fields.pubg_nickname;
   if (fields.picture !== undefined) user.picture = fields.picture;
   if (fields.googleId !== undefined) user.googleId = fields.googleId;
+  if (fields.needsSetup !== undefined) user.needsSetup = Boolean(fields.needsSetup);
+  if (fields.username !== undefined) user.username = fields.username;
   saveUsers();
   return user;
 }

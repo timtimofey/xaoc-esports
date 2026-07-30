@@ -69,22 +69,28 @@ export default function setupAuthRoutes(app) {
       return res.json({ configured: false, redirectUri });
     }
 
+    const frontendOrigin = req.query.origin ? decodeURIComponent(req.query.origin) : `${req.protocol}://${req.get("host")}`;
+    const state = Buffer.from(frontendOrigin).toString("base64");
+
     const params = new URLSearchParams({
       client_id: clientId,
       redirect_uri: redirectUri,
       response_type: "code",
       scope: "openid email profile",
       prompt: "select_account",
+      state,
     });
     const url = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
     res.json({ configured: true, url, redirectUri });
   });
 
   const handleGoogleCallback = async (req, res) => {
-    const { code } = req.query;
+    const { code, state } = req.query;
     if (!code) {
       return res.status(400).send("No authorization code provided");
     }
+
+    const frontendOrigin = state ? Buffer.from(state, "base64").toString("utf-8") : "/";
 
     try {
       const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -125,21 +131,16 @@ export default function setupAuthRoutes(app) {
       }
 
       if (!user) {
-        const baseName = profile.name ? profile.name.replace(/\s+/g, "_") : targetEmail.split("@")[0];
-        let finalUsername = baseName;
-        if (findUserByUsername(finalUsername)) {
-          finalUsername = `${baseName}_${Math.floor(Math.random() * 1000)}`;
-        }
-
         user = {
           id: String(Date.now()),
-          username: finalUsername,
+          username: `user_${Date.now()}`,
           email: targetEmail,
           googleId: profile.id,
           picture: profile.picture || null,
-          pubgNickname: baseName,
+          pubgNickname: "",
           role: "user",
           emailVerified: true,
+          needsSetup: true,
           createdAt: new Date().toISOString(),
         };
         insertUser(user);
@@ -147,42 +148,22 @@ export default function setupAuthRoutes(app) {
         updateUser(user.id, { picture: profile.picture });
       }
 
-      const token = genToken();
-      setToken(token, user.id);
+      const authToken = genToken();
+      setToken(authToken, user.id);
 
-      const payload = JSON.stringify({
-        type: "OAUTH_AUTH_SUCCESS",
-        token,
-        user: {
-          id: user.id,
-          username: user.username,
-          email: user.email,
-          pubgNickname: user.pubgNickname,
-          role: user.role || "user",
-          picture: user.picture,
-          emailVerified: true,
-        },
-      });
+      const userB64 = Buffer.from(JSON.stringify({
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        pubgNickname: user.pubgNickname || "",
+        role: user.role || "user",
+        picture: user.picture,
+        needsSetup: !!user.needsSetup,
+        emailVerified: true,
+      })).toString("base64");
 
-      res.send(`
-        <!DOCTYPE html>
-        <html>
-          <body style="background:#080d19;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
-            <div style="text-align:center;">
-              <h2 style="color:#f59e0b;">Успешно!</h2>
-              <p>Вы успешно авторизовались через Google.</p>
-              <script>
-                if (window.opener) {
-                  window.opener.postMessage(${payload}, '*');
-                  window.close();
-                } else {
-                  window.location.href = '/';
-                }
-              </script>
-            </div>
-          </body>
-        </html>
-      `);
+      const tab = user.needsSetup ? "setup" : "profile";
+      res.redirect(`${frontendOrigin}/#token=${authToken}&user=${encodeURIComponent(userB64)}&tab=${tab}`);
     } catch (err) {
       console.error("[OAUTH_ERROR]", err);
       res.status(500).send(`
@@ -320,7 +301,37 @@ export default function setupAuthRoutes(app) {
   });
 
   app.get("/api/auth/me", requireUser, (req, res) => {
-    res.json({ id: req.user.id, username: req.user.username, email: req.user.email, pubgNickname: req.user.pubgNickname, role: req.user.role || "user", picture: req.user.picture, emailVerified: !!req.user.emailVerified });
+    res.json({ id: req.user.id, username: req.user.username, email: req.user.email, pubgNickname: req.user.pubgNickname, role: req.user.role || "user", picture: req.user.picture, needsSetup: !!req.user.needsSetup, emailVerified: !!req.user.emailVerified });
+  });
+
+  app.post("/api/auth/setup-profile", requireUser, (req, res) => {
+    const { username, pubgNickname } = req.body;
+    if (!username || username.trim().length < 2) {
+      return res.status(400).json({ error: "Имя пользователя должно быть минимум 2 символа" });
+    }
+    if (!pubgNickname || pubgNickname.trim().length < 2 || pubgNickname.trim().length > 25) {
+      return res.status(400).json({ error: "Некорректный никнейм PUBG (от 2 до 25 символов)" });
+    }
+    const cleanName = username.trim();
+    const existing = findUserByUsername(cleanName);
+    if (existing && existing.id !== req.user.id) {
+      return res.status(400).json({ error: "Имя пользователя уже занято" });
+    }
+    updateUser(req.user.id, { username: cleanName, pubgNickname: pubgNickname.trim(), needsSetup: false });
+    const updated = findUserById(req.user.id);
+    res.json({
+      ok: true,
+      user: {
+        id: updated.id,
+        username: updated.username,
+        email: updated.email,
+        pubgNickname: updated.pubgNickname,
+        role: updated.role || "user",
+        picture: updated.picture,
+        needsSetup: false,
+        emailVerified: true,
+      },
+    });
   });
 
   app.post("/api/auth/update-pubg", requireUser, (req, res) => {

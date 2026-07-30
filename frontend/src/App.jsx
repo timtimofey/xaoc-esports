@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Trophy, Shield, User, Gamepad2, Flame, Crosshair, BarChart2, Layers } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Trophy, Shield, User, Flame, Crosshair, BarChart2, Layers } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "./components/AuthContext";
 import ReactBitsBackground from "./components/reactbits/ReactBitsBackground";
@@ -11,12 +11,42 @@ import TournamentSection from "./TournamentSection";
 import WeaponShowcase from "./WeaponShowcase";
 import Profile from "./components/Profile";
 import PlayerStats from "./components/PlayerStats";
+import SetupProfile from "./components/SetupProfile";
 import Admin from "./Admin";
 
 export default function App() {
-  const { user, isAdmin } = useAuth();
-  const [activeTab, setActiveTab] = useState("home"); // "home" | "leaderboard" | "stats" | "tournaments" | "weapons" | "profile" | "admin"
+  const { user, isAdmin, needsSetup, login } = useAuth();
+  const [activeTab, setActiveTab] = useState(() => {
+    if (window.location.hash.includes("token=")) return "home";
+    return "home";
+  });
   const [authModalOpen, setAuthModalOpen] = useState(false);
+
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (hash.includes("token=")) {
+      const params = new URLSearchParams(hash.substring(1));
+      const token = params.get("token");
+      const userB64 = params.get("user");
+      const tab = params.get("tab") || "home";
+      if (token && userB64) {
+        try {
+          const userData = JSON.parse(atob(userB64));
+          login(token, userData);
+        } catch {}
+      }
+      setActiveTab(tab);
+      window.location.hash = "";
+    }
+  }, []);
+
+  useEffect(() => {
+    if (needsSetup && user) {
+      setActiveTab("setup");
+    }
+  }, [needsSetup, user]);
+
+  const isConfigured = user && !needsSetup;
 
   return (
     <div className="min-h-screen bg-[#060a12] text-gray-100 flex flex-col font-sans selection:bg-amber-500/30 selection:text-amber-300">
@@ -75,11 +105,13 @@ export default function App() {
 
             <button
               onClick={() => setActiveTab("stats")}
+              disabled={!isConfigured}
               className={`px-4 py-2 rounded-xl text-xs font-mono font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 ${
                 activeTab === "stats"
                   ? "bg-amber-500 text-black shadow-[0_0_15px_rgba(245,158,11,0.3)]"
-                  : "text-gray-400 hover:text-white hover:bg-white/5"
+                  : !isConfigured ? "text-gray-700 cursor-not-allowed" : "text-gray-400 hover:text-white hover:bg-white/5"
               }`}
+              title={!isConfigured ? "Завершите настройку профиля" : ""}
             >
               <BarChart2 size={14} />
               <span>Статистика</span>
@@ -87,11 +119,13 @@ export default function App() {
 
             <button
               onClick={() => setActiveTab("tournaments")}
+              disabled={!isConfigured}
               className={`px-4 py-2 rounded-xl text-xs font-mono font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 ${
                 activeTab === "tournaments"
                   ? "bg-amber-500 text-black shadow-[0_0_15px_rgba(245,158,11,0.3)]"
-                  : "text-gray-400 hover:text-white hover:bg-white/5"
+                  : !isConfigured ? "text-gray-700 cursor-not-allowed" : "text-gray-400 hover:text-white hover:bg-white/5"
               }`}
+              title={!isConfigured ? "Завершите настройку профиля" : ""}
             >
               <Layers size={14} />
               <span>Турниры</span>
@@ -130,15 +164,15 @@ export default function App() {
 
             {user ? (
               <button
-                onClick={() => setActiveTab("profile")}
+                onClick={() => setActiveTab(needsSetup ? "setup" : "profile")}
                 className={`px-4 py-2 rounded-xl font-mono text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer border ${
-                  activeTab === "profile"
+                  activeTab === "profile" || activeTab === "setup"
                     ? "bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-[0_0_15px_rgba(245,158,11,0.2)]"
                     : "bg-[#0e1628] text-gray-300 border-white/10 hover:border-amber-500/30"
                 }`}
               >
                 <User size={14} className="text-amber-400" />
-                <span className="hidden sm:inline">{user.username}</span>
+                <span className="hidden sm:inline">{needsSetup ? "Настройка" : user.username}</span>
               </button>
             ) : (
               <button
@@ -232,6 +266,7 @@ export default function App() {
             {activeTab === "profile" && (
               <Profile onShowAuth={() => setAuthModalOpen(true)} />
             )}
+            {activeTab === "setup" && user && <SetupProfile />}
             {activeTab === "admin" && <Admin />}
           </motion.div>
         </AnimatePresence>

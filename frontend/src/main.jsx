@@ -9,6 +9,7 @@ window.addEventListener('unhandledrejection', (event) => {
   if (
     event.reason?.message?.includes('WebSocket') ||
     event.reason?.message?.includes('vite') ||
+    event.reason?.message?.includes('closed without opened') ||
     String(event.reason).includes('WebSocket')
   ) {
     event.preventDefault();

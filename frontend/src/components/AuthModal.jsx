@@ -16,12 +16,16 @@ export default function AuthModal({ isOpen, onClose }) {
   // Listen for OAuth postMessage from popup window
   useEffect(() => {
     const handleOAuthMessage = (event) => {
-      if (event.data?.type === "OAUTH_AUTH_SUCCESS") {
-        login(event.data.token, event.data.user);
+      let data = event.data;
+      if (typeof data === 'string') {
+        try { data = JSON.parse(data); } catch { return; }
+      }
+      if (data?.type === "OAUTH_AUTH_SUCCESS") {
+        login(data.token, data.user);
         setShowGoogleChooser(false);
         onClose();
-      } else if (event.data?.type === "OAUTH_AUTH_ERROR") {
-        setError(event.data.error || "Ошибка авторизации через Google");
+      } else if (data?.type === "OAUTH_AUTH_ERROR") {
+        setError(data.error || "Ошибка авторизации через Google");
       }
     };
     window.addEventListener("message", handleOAuthMessage);
@@ -36,23 +40,13 @@ export default function AuthModal({ isOpen, onClose }) {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/auth/google/url");
+      const origin = encodeURIComponent(window.location.origin);
+      const res = await fetch(`/api/auth/google/url?origin=${origin}`);
       const data = await res.json();
-      setGoogleRedirectUri(data.redirectUri || `${window.location.origin}/api/auth/google/callback`);
 
       if (data.configured && data.url) {
-        // Real Google OAuth flow popup
-        const width = 550;
-        const height = 650;
-        const left = window.screenX + (window.innerWidth - width) / 2;
-        const top = window.screenY + (window.innerHeight - height) / 2;
-        window.open(
-          data.url,
-          "google_oauth_popup",
-          `width=${width},height=${height},left=${left},top=${top}`
-        );
+        window.location.href = data.url;
       } else {
-        // Show setup instructions & direct account selector
         setShowGoogleChooser(true);
       }
     } catch {
